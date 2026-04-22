@@ -1,0 +1,48 @@
+### REST Client Tests - All Platforms
+
+@baseUrl = http://localhost:3000
+@apiKey = defcomm@secret
+
+###############################################
+# Get All Latest Releases (NEW!)
+###############################################
+
+### Get all platforms for Defcomm Chat App
+GET {{baseUrl}}/api/updates/Defcommand/latest
+X-API-Key: {{apiKey}}
+
+### Get all platforms for Defcomm Browser
+GET {{baseUrl}}/api/updates/Defcomm-browser/latest
+X-API-Key: {{apiKey}}
+
+###############################################
+# Individual Platform Updates (Existing)
+###############################################
+
+### Windows Update Check
+GET {{baseUrl}}/api/updates/Defcomm-chat-app/windows/x86_64/0.2.4
+X-API-Key: {{apiKey}}
+
+### macOS Intel Update Check
+GET {{baseUrl}}/api/updates/Defcomm-chat-app/darwin/x86_64/0.2.4
+X-API-Key: {{apiKey}}
+
+### macOS ARM Update Check
+GET {{baseUrl}}/api/updates/Defcomm-chat-app/darwin/aarch64/0.2.4
+X-API-Key: {{apiKey}}
+
+### Linux Update Check
+GET {{baseUrl}}/api/updates/Defcomm-chat-app/linux/x86_64/0.2.4
+X-API-Key: {{apiKey}}
+
+###############################################
+# Downloads
+###############################################
+
+### Download Windows Latest
+GET {{baseUrl}}/api/updates/Defcomm-chat-app/download/windows/x86_64/latest
+X-API-Key: {{apiKey}}
+
+### Download macOS ARM Latest
+GET {{baseUrl}}/api/updates/Defcomm-chat-app/download/darwin/aarch64/latest
+X-API-Key: {{apiKey}}
