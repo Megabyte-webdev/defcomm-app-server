@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Defcomm Update Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path
+                            d="M12.89 1.45l8 4A2 2 0 0 1 22 7.24v9.53a2 2 0 0 1-1.11 1.79l-8 4a2 2 0 0 1-1.79 0l-8-4a2 2 0 0 1-1.1-1.8V7.24a2 2 0 0 1 1.11-1.79l8-4a2 2 0 0 1 1.78 0z" />
+                        <path d="M2.32 6.16L12 11l9.68-4.84" />
+                        <path d="M12 22.76V11" />
+                    </svg>
+                </div>
+                <h1>Defcomm Updates</h1>
+            </div>
+            <div style="display: flex; gap: 1rem; align-items: center;">
+                <span class="badge" id="serverStatus">● Connecting...</span>
+                <button class="refresh-btn" onclick="loadAllData()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M23 4v6h-6" />
+                        <path d="M1 20v-6h6" />
+                        <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-label">Total Apps</div>
+                <div class="stat-value" id="totalApps">-</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-label">Latest Release</div>
+                <div class="stat-value" id="latestRelease">-</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Server Status</div>
+                <div class="stat-value" id="statusIndicator">●</div>
+            </div>
+        </div>
+
+        <!-- Apps Grid -->
+        <h2 class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                stroke-linejoin="round" width="20" height="20">
+                <rect x="2" y="2" width="20" height="20" rx="4" />
+                <path d="M8 2v20M16 2v20M2 8h20M2 16h20" />
+            </svg>
+            Applications
+        </h2>
+        <div class="apps-grid" id="appsGrid">
+            <div class="loading">
+                <div class="spinner"></div>
+                <p>Loading applications...</p>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>Defcomm Update Dashboard • Auto-refreshes every 5 minutes</p>
+        </div>
+    </div>
+
+    <script src="./script.js"></script>
+</body>
+
+</html>

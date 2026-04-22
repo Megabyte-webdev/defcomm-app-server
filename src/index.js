@@ -2,6 +2,8 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
+import path from "path";
+import { fileURLToPath } from "url";
 import config from "./config.js";
 import logger from "./utils/logger.js";
 import rateLimiter from "./middleware/rateLimit.js";
@@ -10,6 +12,9 @@ import { requestLogger, errorLogger } from "./middleware/logging.js";
 // Routes
 import updatesRouter from "./routes/updates.js";
 import healthRouter from "./routes/health.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Validate configuration
 try {
@@ -24,7 +29,15 @@ const app = express();
 // Security middleware
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'"],
+      },
+    },
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
@@ -63,25 +76,27 @@ app.use(express.urlencoded({ extended: true }));
 // Trust proxy
 app.set("trust proxy", 1);
 
+// Static files (Dashboard)
+app.use(express.static(path.join(__dirname, "../public")));
+
 // Logging
 app.use(requestLogger);
 
-// Rate limiting
-app.use(rateLimiter);
+// Rate limiting (skip for dashboard assets)
+app.use("/api", rateLimiter);
 
 // Routes
 app.use("/api/updates", updatesRouter);
 app.use("/", healthRouter);
 
+// Dashboard route
+app.get("/dashboard", (req, res) => {
+  res.sendFile(path.join(__dirname, "../public/index.html"));
+});
+
 // Root endpoint
 app.get("/", (req, res) => {
-  res.json({
-    service: "Tauri Update Server",
-    version: "1.0.0",
-    owner: config.github.owner,
-    status: "operational",
-    apps: "Dynamic - Uses app ID from URL as repo name",
-  });
+  res.redirect("/dashboard");
 });
 
 // 404 handler
@@ -100,7 +115,7 @@ const server = app.listen(config.port, () => {
   logger.info(`🚀 Update server running on port ${config.port}`, {
     environment: config.nodeEnv,
     owner: config.github.owner,
-    url: `http://localhost:${config.port}`,
+    dashboard: `http://localhost:${config.port}/dashboard`,
   });
 });
 
