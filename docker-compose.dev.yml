@@ -1,14 +1,36 @@
-version: '3.8'
+FROM node:20-alpine AS builder
 
-services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    command: redis-server --appendonly yes
-    restart: unless-stopped
+# Install pnpm
+RUN corepack enable && corepack prepare pnpm@9 --activate
 
-volumes:
-  redis-data:
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-lock.yaml ./
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile --prod
+
+FROM node:20-alpine
+
+# Install tini for proper signal handling
+RUN apk add --no-cache tini
+
+WORKDIR /app
+
+# Copy node_modules from builder
+COPY --from=builder /app/node_modules ./node_modules
+
+# Copy application code
+COPY . .
+
+# Create logs directory and set permissions
+RUN mkdir -p logs && chown -R node:node logs
+
+# Switch to non-root user
+USER node
+
+EXPOSE 3000
+
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "src/index.js"]
