@@ -5,5 +5,7 @@
   "exec": "node src/index.js",
   "env": {
     "NODE_ENV": "development"
-  }
+  },
+  "delay": 1000,
+  "signal": "SIGTERM"
 }

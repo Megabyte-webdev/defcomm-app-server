@@ -59,7 +59,7 @@ class UpdaterService {
 
           // Return EXACTLY the latest.json, only updating notes from GitHub release
           const updateResponse = {
-            ...latestJson, // Keep everything from latest.json
+            ...latestJson,
             notes:
               release.body ||
               latestJson.notes ||
@@ -137,15 +137,15 @@ class UpdaterService {
             platforms[platformKey] = {
               url: asset.browser_download_url,
               signature: signature?.trim() || undefined,
+              size: asset.size,
+              name: asset.name,
             };
           }
         }
       }
 
-      // Use GitHub release body for notes
       const notes = release.body || `Update to version ${latestVersion}`;
 
-      // Return COMPLETE response with all platforms
       const updateResponse = {
         version: latestVersion,
         notes: notes,
@@ -160,7 +160,6 @@ class UpdaterService {
         current: cleanCurrentVersion,
         latest: latestVersion,
         platformCount: Object.keys(platforms).length,
-        notesPreview: notes.substring(0, 50) + "...",
       });
 
       return updateResponse;
@@ -173,8 +172,16 @@ class UpdaterService {
     }
   }
 
-  async getLatestVersion(appId, channel = "stable") {
+  // ✅ ONLY ONE getAllLatestReleases method - THIS ONE!
+  async getAllLatestReleases(appId, channel = "stable") {
     const repo = appId;
+
+    const cacheKey = `all-platforms:${appId}:${channel}`;
+    const cached = await cacheService.get(cacheKey);
+    if (cached) {
+      logger.debug("Cache hit for all platforms", { appId });
+      return cached;
+    }
 
     const github = new GitHubService(
       config.github.token,
@@ -186,22 +193,74 @@ class UpdaterService {
       const release = await github.getLatestRelease(channel);
 
       if (!release) {
+        logger.warn("No release found", { appId });
         return null;
       }
 
-      return release.tag_name.replace(/^v/, "");
+      const latestVersion = release.tag_name.replace(/^v/, "");
+
+      const platforms = {};
+      const targets = ["windows", "darwin", "linux"];
+      const archs = ["x86_64", "aarch64"];
+
+      for (const target of targets) {
+        for (const arch of archs) {
+          if (target === "linux" && arch === "aarch64") continue;
+
+          const asset = github.findAsset(release, target, arch);
+          if (asset) {
+            const platformKey = `${target}-${arch}`;
+            const sigAsset = await github.findSignatureAsset(release, asset);
+            let signature = null;
+
+            if (sigAsset) {
+              try {
+                signature = await github.getAssetContent(sigAsset.url);
+              } catch (sigError) {
+                logger.warn("Failed to load signature", {
+                  platform: platformKey,
+                  error: sigError.message,
+                });
+              }
+            }
+
+            platforms[platformKey] = {
+              url: asset.browser_download_url,
+              signature: signature?.trim() || undefined,
+              size: asset.size,
+              name: asset.name,
+              download_count: asset.download_count || 0,
+            };
+          }
+        }
+      }
+
+      const allReleases = {
+        appId,
+        version: latestVersion,
+        notes: release.body || `Release ${latestVersion}`,
+        pub_date: release.published_at,
+        channel,
+        html_url: release.html_url,
+        platforms,
+      };
+
+      await cacheService.set(cacheKey, allReleases, 300);
+
+      logger.info("Retrieved all platform releases", {
+        appId,
+        version: latestVersion,
+        platformCount: Object.keys(platforms).length,
+      });
+
+      return allReleases;
     } catch (error) {
-      logger.error("Failed to get latest version", {
+      logger.error("Failed to get all releases", {
         appId,
         error: error.message,
       });
       throw error;
     }
-  }
-
-  async getAllLatestReleases(appId, channel = "stable") {
-    // This returns the same as checkForUpdate but without version checking
-    return this.checkForUpdate(appId, "windows", "x86_64", "0.0.0", channel);
   }
 }
 

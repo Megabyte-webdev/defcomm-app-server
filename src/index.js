@@ -3,16 +3,17 @@ import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 import config from "./config.js";
 import logger from "./utils/logger.js";
 import rateLimiter from "./middleware/rateLimit.js";
 import { requestLogger, errorLogger } from "./middleware/logging.js";
+import cacheService from "./services/cache.js";
 
 // Routes
 import updatesRouter from "./routes/updates.js";
 import healthRouter from "./routes/health.js";
+import logsRouter from "./routes/logs.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -85,152 +86,8 @@ app.use("/api", rateLimiter);
 
 // Routes
 app.use("/api/updates", updatesRouter);
-app.use("/", healthRouter);
-
-// ============================================
-// LOG DOWNLOAD ENDPOINTS (No Render upgrade needed!)
-// ============================================
-
-// Get list of available log files
-app.get("/logs", (req, res) => {
-  try {
-    const logsDir = path.join(__dirname, "../logs");
-
-    if (!fs.existsSync(logsDir)) {
-      return res.json({ logs: [], message: "No logs directory found" });
-    }
-
-    const files = fs
-      .readdirSync(logsDir)
-      .filter((f) => f.endsWith(".log"))
-      .map((f) => ({
-        name: f,
-        size: fs.statSync(path.join(logsDir, f)).size,
-        modified: fs.statSync(path.join(logsDir, f)).mtime,
-      }));
-
-    res.json({ logs: files });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Download specific log file
-app.get("/logs/:filename", (req, res) => {
-  try {
-    const { filename } = req.params;
-
-    // Security: prevent directory traversal
-    if (
-      filename.includes("..") ||
-      filename.includes("/") ||
-      filename.includes("\\")
-    ) {
-      return res.status(400).json({ error: "Invalid filename" });
-    }
-
-    const logsDir = path.join(__dirname, "../logs");
-    const filepath = path.join(logsDir, filename);
-
-    if (!fs.existsSync(filepath)) {
-      return res.status(404).json({ error: "Log file not found" });
-    }
-
-    // Stream the file
-    res.setHeader("Content-Type", "text/plain");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-    const stream = fs.createReadStream(filepath);
-    stream.pipe(res);
-
-    stream.on("error", (err) => {
-      logger.error("Stream error:", err.message);
-      if (!res.headersSent) {
-        res.status(500).json({ error: "Stream failed" });
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get recent logs (last N lines) - useful for quick debugging
-app.get("/logs/:filename/tail", (req, res) => {
-  try {
-    const { filename } = req.params;
-    const lines = parseInt(req.query.lines) || 100;
-
-    // Security: prevent directory traversal
-    if (
-      filename.includes("..") ||
-      filename.includes("/") ||
-      filename.includes("\\")
-    ) {
-      return res.status(400).json({ error: "Invalid filename" });
-    }
-
-    const logsDir = path.join(__dirname, "../logs");
-    const filepath = path.join(logsDir, filename);
-
-    if (!fs.existsSync(filepath)) {
-      return res.status(404).json({ error: "Log file not found" });
-    }
-
-    // Read last N lines
-    const content = fs.readFileSync(filepath, "utf8");
-    const allLines = content.split("\n").filter((l) => l.trim());
-    const lastLines = allLines.slice(-lines);
-
-    res.json({
-      filename,
-      totalLines: allLines.length,
-      lines: lastLines,
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Get combined recent logs from all files
-app.get("/logs/recent", (req, res) => {
-  try {
-    const lines = parseInt(req.query.lines) || 50;
-    const logsDir = path.join(__dirname, "../logs");
-
-    if (!fs.existsSync(logsDir)) {
-      return res.json({ logs: [], message: "No logs directory found" });
-    }
-
-    const files = fs.readdirSync(logsDir).filter((f) => f.endsWith(".log"));
-
-    const recentEntries = [];
-
-    for (const file of files) {
-      const filepath = path.join(logsDir, file);
-      const content = fs.readFileSync(filepath, "utf8");
-      const logLines = content
-        .split("\n")
-        .filter((l) => l.trim())
-        .slice(-lines)
-        .map((line) => {
-          try {
-            return JSON.parse(line);
-          } catch {
-            return { raw: line };
-          }
-        });
-
-      recentEntries.push({
-        file,
-        entries: logLines,
-      });
-    }
-
-    res.json({ recent: recentEntries });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
+app.use("/health", healthRouter);
+app.use("/logs", logsRouter);
 
 // Dashboard route
 app.get("/dashboard", (req, res) => {
@@ -253,23 +110,45 @@ app.use((req, res) => {
 // Error handler
 app.use(errorLogger);
 
-// Start server
-const server = app.listen(config.port, () => {
-  logger.info(`🚀 Update server running on port ${config.port}`, {
-    environment: config.nodeEnv,
-    owner: config.github.owner,
-    dashboard: `http://localhost:${config.port}/dashboard`,
-    logs: `http://localhost:${config.port}/logs`,
-  });
-});
+// ============================================
+// START SERVER WITH CACHE CLEAR
+// ============================================
 
-// Graceful shutdown
-process.on("SIGTERM", () => {
-  logger.info("SIGTERM received, shutting down gracefully");
-  server.close(() => {
-    logger.info("Server closed");
-    process.exit(0);
+// Async startup function
+async function startServer() {
+  // Clear cache on startup (optional - comment out if not needed)
+  try {
+    await cacheService.clear();
+    console.log("✅ Cache cleared on startup");
+  } catch (error) {
+    console.warn("⚠️ Failed to clear cache:", error.message);
+  }
+
+  const server = app.listen(config.port, () => {
+    console.log(`\n=================================`);
+    console.log(`🚀 Server running on port ${config.port}`);
+    console.log(`📋 Logs: http://localhost:${config.port}/logs`);
+    console.log(`🏥 Health: http://localhost:${config.port}/health`);
+    console.log(`📊 Dashboard: http://localhost:${config.port}/dashboard`);
+    console.log(`=================================\n`);
+
+    logger.info(`🚀 Update server running on port ${config.port}`, {
+      environment: config.nodeEnv,
+      owner: config.github.owner,
+    });
   });
-});
+
+  // Graceful shutdown
+  process.on("SIGTERM", () => {
+    logger.info("SIGTERM received, shutting down gracefully");
+    server.close(() => {
+      logger.info("Server closed");
+      process.exit(0);
+    });
+  });
+}
+
+// Start the server
+startServer();
 
 export default app;

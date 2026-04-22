@@ -4,7 +4,7 @@ import cacheService from "../services/cache.js";
 
 const router = Router();
 
-router.get("/health", async (req, res) => {
+router.get("/", async (req, res) => {
   const cacheStats = cacheService.getStats();
 
   const health = {
