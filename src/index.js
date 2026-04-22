@@ -2,6 +2,8 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
+import path from "path";
+import { fileURLToPath } from "url";
 import config from "./config.js";
 import logger from "./utils/logger.js";
 import rateLimiter from "./middleware/rateLimit.js";
@@ -10,6 +12,9 @@ import { requestLogger, errorLogger } from "./middleware/logging.js";
 // Routes
 import updatesRouter from "./routes/updates.js";
 import healthRouter from "./routes/health.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Validate configuration
 try {
@@ -24,7 +29,15 @@ const app = express();
 // Security middleware
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: ["'self'"],
+      },
+    },
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
@@ -33,7 +46,7 @@ app.use(
   }),
 );
 
-// ✅ FIX: Proper CORS configuration
+// CORS
 app.use(
   cors({
     origin: [
@@ -43,16 +56,13 @@ app.use(
       "tauri://localhost",
       "https://tauri.localhost",
       "https://defcomm-app-server.onrender.com",
+      // Add your production Tauri app origins if needed
     ],
     credentials: true,
     allowedHeaders: ["X-API-Key", "Content-Type", "Authorization"],
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    exposedHeaders: ["X-API-Key"],
+    methods: ["GET", "OPTIONS"],
   }),
 );
-
-// Handle preflight requests
-app.options("*", cors());
 
 // Compression
 app.use(compression());
@@ -64,10 +74,13 @@ app.use(express.urlencoded({ extended: true }));
 // Trust proxy
 app.set("trust proxy", 1);
 
+// Static files (Dashboard)
+app.use(express.static(path.join(__dirname, "../public")));
+
 // Logging
 app.use(requestLogger);
 
-// Rate limiting
+// Rate limiting (skip for dashboard assets)
 app.use("/api", rateLimiter);
 
 // Routes
@@ -100,7 +113,7 @@ const server = app.listen(config.port, () => {
   logger.info(`🚀 Update server running on port ${config.port}`, {
     environment: config.nodeEnv,
     owner: config.github.owner,
-    url: `http://localhost:${config.port}`,
+    dashboard: `http://localhost:${config.port}/dashboard`,
   });
 });
 
