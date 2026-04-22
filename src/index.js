@@ -2,8 +2,6 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
-import path from "path";
-import { fileURLToPath } from "url";
 import config from "./config.js";
 import logger from "./utils/logger.js";
 import rateLimiter from "./middleware/rateLimit.js";
@@ -12,9 +10,6 @@ import { requestLogger, errorLogger } from "./middleware/logging.js";
 // Routes
 import updatesRouter from "./routes/updates.js";
 import healthRouter from "./routes/health.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 
 // Validate configuration
 try {
@@ -29,15 +24,7 @@ const app = express();
 // Security middleware
 app.use(
   helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'", "'unsafe-inline'"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'"],
-      },
-    },
+    contentSecurityPolicy: false,
     hsts: {
       maxAge: 31536000,
       includeSubDomains: true,
@@ -46,25 +33,26 @@ app.use(
   }),
 );
 
-// CORS
+// ✅ FIX: Proper CORS configuration
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (
-        !origin ||
-        origin.startsWith("tauri://") ||
-        origin.startsWith("https://tauri.localhost")
-      ) {
-        callback(null, true);
-      } else if (config.nodeEnv === "development") {
-        callback(null, true);
-      } else {
-        callback(new Error("CORS not allowed"));
-      }
-    },
+    origin: [
+      "http://localhost:1420",
+      "http://localhost:1421",
+      "http://localhost:3000",
+      "tauri://localhost",
+      "https://tauri.localhost",
+      "https://defcomm-app-server.onrender.com",
+    ],
     credentials: true,
+    allowedHeaders: ["X-API-Key", "Content-Type", "Authorization"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    exposedHeaders: ["X-API-Key"],
   }),
 );
+
+// Handle preflight requests
+app.options("*", cors());
 
 // Compression
 app.use(compression());
@@ -76,13 +64,10 @@ app.use(express.urlencoded({ extended: true }));
 // Trust proxy
 app.set("trust proxy", 1);
 
-// Static files (Dashboard)
-app.use(express.static(path.join(__dirname, "../public")));
-
 // Logging
 app.use(requestLogger);
 
-// Rate limiting (skip for dashboard assets)
+// Rate limiting
 app.use("/api", rateLimiter);
 
 // Routes
@@ -115,7 +100,7 @@ const server = app.listen(config.port, () => {
   logger.info(`🚀 Update server running on port ${config.port}`, {
     environment: config.nodeEnv,
     owner: config.github.owner,
-    dashboard: `http://localhost:${config.port}/dashboard`,
+    url: `http://localhost:${config.port}`,
   });
 });
 
