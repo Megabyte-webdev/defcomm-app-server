@@ -1,5 +1,5 @@
 const API_BASE = window.location.origin;
-const API_KEY = "defcomm@secret";
+const API_KEY = process.env.API_KEYS;
 
 // Professional SVG Icons
 const ICONS = {
