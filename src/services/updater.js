@@ -57,15 +57,14 @@ class UpdaterService {
           const jsonContent = await github.getAssetContent(jsonAsset.url);
           const latestJson = JSON.parse(jsonContent);
 
-          // Update notes from the actual GitHub release if they're better
+          // Return EXACTLY the latest.json, only updating notes from GitHub release
           const updateResponse = {
-            version: latestJson.version,
+            ...latestJson, // Keep everything from latest.json
             notes:
               release.body ||
               latestJson.notes ||
               `Release v${latestJson.version}`,
             pub_date: release.published_at || latestJson.pub_date,
-            platforms: latestJson.platforms,
           };
 
           await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
