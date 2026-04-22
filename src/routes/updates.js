@@ -2,10 +2,12 @@ import { Router } from "express";
 import updaterService from "../services/updater.js";
 import { authenticateApiKey } from "../middleware/auth.js";
 import logger from "../utils/logger.js";
+import axios from "axios";
+import config from "../config.js";
 
 const router = Router();
 
-// Main update check endpoint - Now with :appId parameter
+// Main update check endpoint
 router.get(
   "/:appId/:target/:arch/:currentVersion",
   authenticateApiKey,
@@ -13,17 +15,6 @@ router.get(
     try {
       const { appId, target, arch, currentVersion } = req.params;
       const channel = req.query.channel || "stable";
-      const clientId = req.headers["x-client-id"] || req.ip;
-
-      logger.info("Update check request", {
-        appId,
-        target,
-        arch,
-        currentVersion,
-        channel,
-        clientId,
-        userAgent: req.headers["user-agent"],
-      });
 
       const update = await updaterService.checkForUpdate(
         appId,
@@ -37,65 +28,53 @@ router.get(
         return res.status(204).send();
       }
 
-      res.json(update);
+      // For Tauri updater, return flat structure
+      const platformKey = `${target}-${arch}`;
+
+      // Prefer NSIS for Windows
+      let platformData;
+      if (target === "windows") {
+        platformData =
+          update.platforms?.["windows-x86_64-nsis"] ||
+          update.platforms?.["windows-x86_64"];
+      } else {
+        platformData = update.platforms?.[platformKey];
+      }
+
+      if (!platformData) {
+        return res.status(404).json({ error: "No binary for this platform" });
+      }
+
+      // Return URL pointing to OUR proxy endpoint, not GitHub directly
+      const proxyUrl = `${req.protocol}://${req.get("host")}/api/updates/${appId}/download/${target}/${arch}/${update.version}`;
+
+      res.json({
+        version: update.version,
+        notes: update.notes,
+        pub_date: update.pub_date,
+        url: proxyUrl, // Point to our proxy!
+        signature: platformData.signature,
+      });
     } catch (error) {
       next(error);
     }
   },
 );
 
-// NEW: Get all latest releases for an app (all platforms)
-router.get("/:appId/latest", authenticateApiKey, async (req, res, next) => {
-  try {
-    const { appId } = req.params;
-    const channel = req.query.channel || "stable";
-
-    logger.info("Latest releases request", {
-      appId,
-      channel,
-      userAgent: req.headers["user-agent"],
-    });
-
-    const allPlatforms = await updaterService.getAllLatestReleases(
-      appId,
-      channel,
-    );
-
-    if (!allPlatforms || Object.keys(allPlatforms.platforms).length === 0) {
-      return res.status(404).json({
-        error: "Not Found",
-        message: "No releases found for this app",
-      });
-    }
-
-    res.json(allPlatforms);
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Download endpoint (proxy)
+// NEW: Proxy download endpoint (streams from GitHub with auth)
 router.get(
   "/:appId/download/:target/:arch/:version",
   authenticateApiKey,
   async (req, res, next) => {
     try {
       const { appId, target, arch, version } = req.params;
-      const channel = req.query.channel || "stable";
 
-      // If version is "latest", get the latest release
-      let requestedVersion = version;
-      if (version === "latest") {
-        const latest = await updaterService.getLatestVersion(appId, channel);
-        requestedVersion = latest;
-      }
-
+      // Get the actual GitHub URL
       const update = await updaterService.checkForUpdate(
         appId,
         target,
         arch,
         "0.0.0",
-        channel,
       );
 
       if (!update) {
@@ -103,15 +82,43 @@ router.get(
       }
 
       const platformKey = `${target}-${arch}`;
-      const platformData = update.platforms[platformKey];
+      let platformData;
+      if (target === "windows") {
+        platformData =
+          update.platforms?.["windows-x86_64-nsis"] ||
+          update.platforms?.["windows-x86_64"];
+      } else {
+        platformData = update.platforms?.[platformKey];
+      }
 
       if (!platformData?.url) {
         return res.status(404).json({ error: "Binary not found" });
       }
 
-      res.redirect(platformData.url);
+      // Stream the file from GitHub with authentication
+      const response = await axios({
+        method: "GET",
+        url: platformData.url,
+        headers: {
+          Authorization: `Bearer ${config.github.token}`,
+          Accept: "application/octet-stream",
+        },
+        responseType: "stream",
+      });
+
+      // Set appropriate headers
+      res.setHeader("Content-Type", response.headers["content-type"]);
+      res.setHeader("Content-Length", response.headers["content-length"]);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${platformData.name || "update"}"`,
+      );
+
+      // Pipe the file to the client
+      response.data.pipe(res);
     } catch (error) {
-      next(error);
+      logger.error("Download proxy failed:", error.message);
+      res.status(500).json({ error: "Download failed" });
     }
   },
 );
