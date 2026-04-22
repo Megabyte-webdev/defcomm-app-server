@@ -69,7 +69,7 @@ class UpdaterService {
 
           await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
 
-          logger.info("✅ Update available (from latest.json)", {
+          logger.info(" Update available (from latest.json)", {
             appId,
             version: latestJson.version,
           });
@@ -155,7 +155,7 @@ class UpdaterService {
 
       await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
 
-      logger.info("✅ Update available", {
+      logger.info(" Update available", {
         appId,
         current: cleanCurrentVersion,
         latest: latestVersion,
@@ -172,7 +172,7 @@ class UpdaterService {
     }
   }
 
-  // ✅ ONLY ONE getAllLatestReleases method - THIS ONE!
+  // ONLY ONE getAllLatestReleases method - THIS ONE!
   async getAllLatestReleases(appId, channel = "stable") {
     const repo = appId;
 

@@ -71,6 +71,7 @@ router.get(
 );
 
 // Proxy download endpoint
+// Proxy download endpoint
 router.get(
   "/:appId/download/:target/:arch/:version",
   authenticateApiKey,
@@ -80,38 +81,56 @@ router.get(
 
       logger.info(`Download request: ${appId} ${target} ${arch} ${version}`);
 
-      // Get the update info
       const update = await updaterService.getAllLatestReleases(appId);
 
       if (!update) {
-        logger.error("No update found for download");
         return res.status(404).json({ error: "Version not found" });
       }
 
-      // Find the platform data
+      // 🔍 DEBUG: Log ALL available platform keys
+      logger.info(
+        "Available platform keys:",
+        Object.keys(update.platforms || {}),
+      );
+
+      // Find the platform data - use EXACT keys from the platforms object
       let platformData;
-      if (target === "windows") {
-        platformData =
-          update.platforms?.["windows-x86_64-nsis"] ||
-          update.platforms?.["windows-x86_64"] ||
-          update.platforms?.["windows-x86_64-msi"];
-      } else if (target === "darwin") {
-        platformData =
-          update.platforms?.[`darwin-${arch}`] ||
-          update.platforms?.[`darwin-${arch}-app`];
-      } else {
-        const platformKey = `${target}-${arch}`;
-        platformData = update.platforms?.[platformKey];
+
+      // Try all possible key variations
+      const possibleKeys = [
+        `${target}-${arch}`,
+        `${target}-${arch}-nsis`,
+        `${target}-${arch}-msi`,
+        `${target}-${arch}-app`,
+        `${target}-${arch}-appimage`,
+        `${target}-${arch}-deb`,
+        `${target}-${arch}-rpm`,
+      ];
+
+      for (const key of possibleKeys) {
+        if (update.platforms?.[key]) {
+          platformData = update.platforms[key];
+          logger.info(`Found platform data with key: ${key}`);
+          break;
+        }
       }
 
       if (!platformData?.url) {
-        logger.error("No platform URL found", { target, arch });
-        return res.status(404).json({ error: "Binary not found" });
+        logger.error("No platform URL found", {
+          target,
+          arch,
+          tried: possibleKeys,
+          available: Object.keys(update.platforms || {}),
+        });
+        return res.status(404).json({
+          error: "Binary not found",
+          available: Object.keys(update.platforms || {}),
+        });
       }
 
       logger.info(`Proxying download from: ${platformData.url}`);
 
-      // Stream the file from GitHub with authentication
+      // Stream the file from GitHub
       const response = await axios({
         method: "GET",
         url: platformData.url,
@@ -121,24 +140,21 @@ router.get(
           "User-Agent": "Tauri-Update-Server",
         },
         responseType: "stream",
-        timeout: 300000, // 5 minutes for large files
-        validateStatus: (status) => status < 400,
+        timeout: 300000,
+        maxRedirects: 5,
       });
 
-      // Set appropriate headers
       const filename =
         platformData.name || `${appId}_${version}_${target}_${arch}`;
-      res.setHeader(
-        "Content-Type",
-        response.headers["content-type"] || "application/octet-stream",
-      );
-      res.setHeader("Content-Length", response.headers["content-length"]);
+      res.setHeader("Content-Type", "application/octet-stream");
+      if (response.headers["content-length"]) {
+        res.setHeader("Content-Length", response.headers["content-length"]);
+      }
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename}"`,
       );
 
-      // Pipe the file to the client
       response.data.pipe(res);
 
       response.data.on("error", (err) => {
@@ -151,15 +167,10 @@ router.get(
       logger.error("Download proxy failed:", {
         message: error.message,
         status: error.response?.status,
-        statusText: error.response?.statusText,
-        url: error.config?.url,
       });
 
       if (error.response?.status === 404) {
         return res.status(404).json({ error: "File not found on GitHub" });
-      }
-      if (error.response?.status === 403) {
-        return res.status(403).json({ error: "GitHub token lacks permission" });
       }
 
       res.status(500).json({

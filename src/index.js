@@ -110,29 +110,25 @@ app.use((req, res) => {
 // Error handler
 app.use(errorLogger);
 
-// ============================================
-// START SERVER WITH CACHE CLEAR
-// ============================================
-
 // Async startup function
 async function startServer() {
   // Clear cache on startup (optional - comment out if not needed)
   try {
     await cacheService.clear();
-    console.log("✅ Cache cleared on startup");
+    console.log("Cache cleared on startup");
   } catch (error) {
-    console.warn("⚠️ Failed to clear cache:", error.message);
+    console.warn(" Failed to clear cache:", error.message);
   }
 
   const server = app.listen(config.port, () => {
     console.log(`\n=================================`);
-    console.log(`🚀 Server running on port ${config.port}`);
-    console.log(`📋 Logs: http://localhost:${config.port}/logs`);
-    console.log(`🏥 Health: http://localhost:${config.port}/health`);
-    console.log(`📊 Dashboard: http://localhost:${config.port}/dashboard`);
+    console.log(` Server running on port ${config.port}`);
+    console.log(` Logs: http://localhost:${config.port}/logs`);
+    console.log(` Health: http://localhost:${config.port}/health`);
+    console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
     console.log(`=================================\n`);
 
-    logger.info(`🚀 Update server running on port ${config.port}`, {
+    logger.info(` Update server running on port ${config.port}`, {
       environment: config.nodeEnv,
       owner: config.github.owner,
     });
