@@ -56,7 +56,6 @@ app.use(
       "tauri://localhost",
       "https://tauri.localhost",
       "https://defcomm-app-server.onrender.com",
-      // Add your production Tauri app origins if needed
     ],
     credentials: true,
     allowedHeaders: ["X-API-Key", "Content-Type", "Authorization"],
