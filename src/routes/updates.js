@@ -12,36 +12,32 @@ router.get(
   async (req, res, next) => {
     try {
       const { appId, target, arch, currentVersion } = req.params;
+      const channel = req.query.channel || "stable";
+      const clientId = req.headers["x-client-id"] || req.ip;
+
+      logger.info("Update check request", {
+        appId,
+        target,
+        arch,
+        currentVersion,
+        channel,
+        clientId,
+        userAgent: req.headers["user-agent"],
+      });
 
       const update = await updaterService.checkForUpdate(
         appId,
         target,
         arch,
         currentVersion,
+        channel,
       );
 
       if (!update) {
         return res.status(204).send();
       }
 
-      // For dynamic endpoint, return flat structure
-      const platformKey = `${target}-${arch}`;
-      const platformData =
-        update.platforms?.[platformKey] ||
-        Object.values(update.platforms || {}).find((p) => p.url);
-
-      if (!platformData) {
-        return res.status(404).json({ error: "No binary for this platform" });
-      }
-
-      // Return flat structure that Tauri expects
-      res.json({
-        version: update.version,
-        notes: update.notes,
-        pub_date: update.pub_date,
-        url: platformData.url,
-        signature: platformData.signature,
-      });
+      res.json(update);
     } catch (error) {
       next(error);
     }
