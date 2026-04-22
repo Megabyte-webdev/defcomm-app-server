@@ -15,10 +15,10 @@ class UpdaterService {
     // Clean version string
     const cleanCurrentVersion = currentVersion.replace(/^v/, "");
 
-    // The repo name is the app ID (e.g., "defcomm-chat-app" -> repo: "Defcomm-chat-app")
+    // The repo name is the app ID
     const repo = appId;
 
-    // Check cache
+    // Check cache first
     const cacheKey = cacheService.generateKey(
       appId,
       target,
@@ -26,12 +26,14 @@ class UpdaterService {
       cleanCurrentVersion,
       channel,
     );
+
     const cached = await cacheService.get(cacheKey);
     if (cached) {
       logger.debug("Cache hit", { appId, currentVersion: cleanCurrentVersion });
       return cached;
     }
 
+    // Create GitHub service once
     const github = new GitHubService(
       config.github.token,
       config.github.owner,
@@ -47,6 +49,43 @@ class UpdaterService {
         return null;
       }
 
+      // Check for latest.json asset first (hybrid approach)
+      const jsonAsset = release.assets.find((a) => a.name === "latest.json");
+
+      if (jsonAsset) {
+        try {
+          const jsonContent = await github.getAssetContent(jsonAsset.url);
+          const latestJson = JSON.parse(jsonContent);
+
+          const platformKey = `${target}-${arch}`;
+          const platformData = latestJson.platforms?.[platformKey];
+
+          if (platformData) {
+            const updateResponse = {
+              version: latestJson.version,
+              notes: latestJson.notes,
+              pub_date: latestJson.pub_date,
+              url: platformData.url,
+              signature: platformData.signature,
+            };
+
+            await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
+
+            logger.info("✅ Update available (from latest.json)", {
+              appId,
+              version: latestJson.version,
+            });
+
+            return updateResponse;
+          }
+        } catch (jsonError) {
+          logger.warn("Failed to parse latest.json, falling back to manual", {
+            error: jsonError.message,
+          });
+        }
+      }
+
+      // Fallback: Build response from release assets
       const latestVersion = release.tag_name.replace(/^v/, "");
 
       logger.info("Version check", {
@@ -79,7 +118,7 @@ class UpdaterService {
         return null;
       }
 
-      // Find signature (optional)
+      // Find signature
       const sigAsset = await github.findSignatureAsset(release, asset);
       let signature = null;
 
@@ -91,16 +130,13 @@ class UpdaterService {
         }
       }
 
+      // Tauri expects flat structure for updater
       const updateResponse = {
         version: latestVersion,
         notes: release.body || `Update to version ${latestVersion}`,
         pub_date: release.published_at,
-        platforms: {
-          [`${target}-${arch}`]: {
-            url: asset.browser_download_url,
-            signature: signature?.trim() || undefined,
-          },
-        },
+        url: asset.browser_download_url,
+        signature: signature?.trim() || undefined,
       };
 
       await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
@@ -122,6 +158,7 @@ class UpdaterService {
       throw error;
     }
   }
+
   async getLatestVersion(appId, channel = "stable") {
     const repo = appId;
 
@@ -148,11 +185,9 @@ class UpdaterService {
     }
   }
 
-  // NEW: Get all platform releases at once
   async getAllLatestReleases(appId, channel = "stable") {
     const repo = appId;
 
-    // Check cache first
     const cacheKey = `all-platforms:${appId}:${channel}`;
     const cached = await cacheService.get(cacheKey);
     if (cached) {
@@ -176,21 +211,17 @@ class UpdaterService {
 
       const latestVersion = release.tag_name.replace(/^v/, "");
 
-      // Find assets for all platforms
       const platforms = {};
       const targets = ["windows", "darwin", "linux"];
       const archs = ["x86_64", "aarch64"];
 
       for (const target of targets) {
         for (const arch of archs) {
-          // Skip invalid combinations
           if (target === "linux" && arch === "aarch64") continue;
 
           const asset = github.findAsset(release, target, arch);
           if (asset) {
             const platformKey = `${target}-${arch}`;
-
-            // Try to find signature
             const sigAsset = await github.findSignatureAsset(release, asset);
             let signature = null;
 
@@ -226,7 +257,6 @@ class UpdaterService {
         platforms,
       };
 
-      // Cache for 5 minutes
       await cacheService.set(cacheKey, allReleases, 300);
 
       logger.info("Retrieved all platform releases", {
