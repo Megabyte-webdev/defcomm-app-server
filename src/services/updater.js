@@ -49,7 +49,7 @@ class UpdaterService {
         return null;
       }
 
-      // Check for latest.json asset first (hybrid approach)
+      // Check for latest.json asset first
       const jsonAsset = release.assets.find((a) => a.name === "latest.json");
 
       if (jsonAsset) {
@@ -57,27 +57,25 @@ class UpdaterService {
           const jsonContent = await github.getAssetContent(jsonAsset.url);
           const latestJson = JSON.parse(jsonContent);
 
-          const platformKey = `${target}-${arch}`;
-          const platformData = latestJson.platforms?.[platformKey];
+          // Update notes from the actual GitHub release if they're better
+          const updateResponse = {
+            version: latestJson.version,
+            notes:
+              release.body ||
+              latestJson.notes ||
+              `Release v${latestJson.version}`,
+            pub_date: release.published_at || latestJson.pub_date,
+            platforms: latestJson.platforms,
+          };
 
-          if (platformData) {
-            const updateResponse = {
-              version: latestJson.version,
-              notes: latestJson.notes,
-              pub_date: latestJson.pub_date,
-              url: platformData.url,
-              signature: platformData.signature,
-            };
+          await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
 
-            await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
+          logger.info("✅ Update available (from latest.json)", {
+            appId,
+            version: latestJson.version,
+          });
 
-            logger.info("✅ Update available (from latest.json)", {
-              appId,
-              version: latestJson.version,
-            });
-
-            return updateResponse;
-          }
+          return updateResponse;
         } catch (jsonError) {
           logger.warn("Failed to parse latest.json, falling back to manual", {
             error: jsonError.message,
@@ -85,7 +83,7 @@ class UpdaterService {
         }
       }
 
-      // Fallback: Build response from release assets
+      // Fallback: Build complete response from release assets
       const latestVersion = release.tag_name.replace(/^v/, "");
 
       logger.info("Version check", {
@@ -111,32 +109,49 @@ class UpdaterService {
         return null;
       }
 
-      // Find asset
-      const asset = github.findAsset(release, target, arch);
-      if (!asset) {
-        logger.warn("No matching asset", { appId, target, arch });
-        return null;
-      }
+      // Build platforms object with ALL available platforms
+      const platforms = {};
+      const targets = ["windows", "darwin", "linux"];
+      const archs = ["x86_64", "aarch64"];
 
-      // Find signature
-      const sigAsset = await github.findSignatureAsset(release, asset);
-      let signature = null;
+      for (const t of targets) {
+        for (const a of archs) {
+          if (t === "linux" && a === "aarch64") continue;
 
-      if (sigAsset) {
-        try {
-          signature = await github.getAssetContent(sigAsset.url);
-        } catch (sigError) {
-          logger.warn("Failed to load signature", { error: sigError.message });
+          const asset = github.findAsset(release, t, a);
+          if (asset) {
+            const platformKey = `${t}-${a}`;
+            const sigAsset = await github.findSignatureAsset(release, asset);
+            let signature = null;
+
+            if (sigAsset) {
+              try {
+                signature = await github.getAssetContent(sigAsset.url);
+              } catch (sigError) {
+                logger.warn("Failed to load signature", {
+                  platform: platformKey,
+                  error: sigError.message,
+                });
+              }
+            }
+
+            platforms[platformKey] = {
+              url: asset.browser_download_url,
+              signature: signature?.trim() || undefined,
+            };
+          }
         }
       }
 
-      // Tauri expects flat structure for updater
+      // Use GitHub release body for notes
+      const notes = release.body || `Update to version ${latestVersion}`;
+
+      // Return COMPLETE response with all platforms
       const updateResponse = {
         version: latestVersion,
-        notes: release.body || `Update to version ${latestVersion}`,
+        notes: notes,
         pub_date: release.published_at,
-        url: asset.browser_download_url,
-        signature: signature?.trim() || undefined,
+        platforms: platforms,
       };
 
       await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
@@ -145,8 +160,8 @@ class UpdaterService {
         appId,
         current: cleanCurrentVersion,
         latest: latestVersion,
-        target,
-        arch,
+        platformCount: Object.keys(platforms).length,
+        notesPreview: notes.substring(0, 50) + "...",
       });
 
       return updateResponse;
@@ -186,93 +201,8 @@ class UpdaterService {
   }
 
   async getAllLatestReleases(appId, channel = "stable") {
-    const repo = appId;
-
-    const cacheKey = `all-platforms:${appId}:${channel}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached) {
-      logger.debug("Cache hit for all platforms", { appId });
-      return cached;
-    }
-
-    const github = new GitHubService(
-      config.github.token,
-      config.github.owner,
-      repo,
-    );
-
-    try {
-      const release = await github.getLatestRelease(channel);
-
-      if (!release) {
-        logger.warn("No release found", { appId });
-        return null;
-      }
-
-      const latestVersion = release.tag_name.replace(/^v/, "");
-
-      const platforms = {};
-      const targets = ["windows", "darwin", "linux"];
-      const archs = ["x86_64", "aarch64"];
-
-      for (const target of targets) {
-        for (const arch of archs) {
-          if (target === "linux" && arch === "aarch64") continue;
-
-          const asset = github.findAsset(release, target, arch);
-          if (asset) {
-            const platformKey = `${target}-${arch}`;
-            const sigAsset = await github.findSignatureAsset(release, asset);
-            let signature = null;
-
-            if (sigAsset) {
-              try {
-                signature = await github.getAssetContent(sigAsset.url);
-              } catch (sigError) {
-                logger.warn("Failed to load signature", {
-                  platform: platformKey,
-                  error: sigError.message,
-                });
-              }
-            }
-
-            platforms[platformKey] = {
-              url: asset.browser_download_url,
-              signature: signature?.trim() || undefined,
-              size: asset.size,
-              name: asset.name,
-              download_count: asset.download_count,
-            };
-          }
-        }
-      }
-
-      const allReleases = {
-        appId,
-        version: latestVersion,
-        notes: release.body || `Release ${latestVersion}`,
-        pub_date: release.published_at,
-        channel,
-        html_url: release.html_url,
-        platforms,
-      };
-
-      await cacheService.set(cacheKey, allReleases, 300);
-
-      logger.info("Retrieved all platform releases", {
-        appId,
-        version: latestVersion,
-        platformCount: Object.keys(platforms).length,
-      });
-
-      return allReleases;
-    } catch (error) {
-      logger.error("Failed to get all releases", {
-        appId,
-        error: error.message,
-      });
-      throw error;
-    }
+    // This returns the same as checkForUpdate but without version checking
+    return this.checkForUpdate(appId, "windows", "x86_64", "0.0.0", channel);
   }
 }
 
