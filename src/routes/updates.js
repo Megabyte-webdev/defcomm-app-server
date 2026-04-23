@@ -4,6 +4,7 @@ import { authenticateApiKey } from "../middleware/auth.js";
 import logger from "../utils/logger.js";
 import axios from "axios";
 import config from "../config.js";
+import GitHubService from "../services/github.js";
 
 const router = Router();
 
