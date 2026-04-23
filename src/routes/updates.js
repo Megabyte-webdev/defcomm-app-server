@@ -7,7 +7,7 @@ import config from "../config.js";
 
 const router = Router();
 
-// Main update check endpoint
+// Main update check endpoint - Returns PROXY URL for Tauri
 router.get(
   "/:appId/:target/:arch/:currentVersion",
   authenticateApiKey,
@@ -28,7 +28,7 @@ router.get(
         return res.status(204).send();
       }
 
-      // For Tauri updater, return flat structure
+      // For Tauri updater, return flat structure with PROXY URL
       let platformData;
       if (target === "windows") {
         platformData =
@@ -45,15 +45,10 @@ router.get(
       }
 
       if (!platformData) {
-        logger.error("No platform data found", {
-          target,
-          arch,
-          available: Object.keys(update.platforms || {}),
-        });
         return res.status(404).json({ error: "No binary for this platform" });
       }
 
-      // Return URL pointing to OUR proxy endpoint
+      // Return PROXY URL - no token exposed!
       const proxyUrl = `https://defcomm-app-server.onrender.com/api/updates/${appId}/download/${target}/${arch}/${update.version}`;
 
       res.json({
@@ -70,8 +65,7 @@ router.get(
   },
 );
 
-// Proxy download endpoint
-// Proxy download endpoint
+// SINGLE DOWNLOAD ENDPOINT - Works for both Tauri and Dashboard
 router.get(
   "/:appId/download/:target/:arch/:version",
   authenticateApiKey,
@@ -81,59 +75,45 @@ router.get(
 
       logger.info(`Download request: ${appId} ${target} ${arch} ${version}`);
 
-      const update = await updaterService.getAllLatestReleases(appId);
-
-      if (!update) {
-        return res.status(404).json({ error: "Version not found" });
-      }
-
-      // 🔍 DEBUG: Log ALL available platform keys
-      logger.info(
-        "Available platform keys:",
-        Object.keys(update.platforms || {}),
+      // Get the raw GitHub release data (bypass cache or use fresh)
+      const github = new GitHubService(
+        config.github.token,
+        config.github.owner,
+        appId,
       );
 
-      // Find the platform data - use EXACT keys from the platforms object
-      let platformData;
+      const release = await github.getLatestRelease();
 
-      // Try all possible key variations
-      const possibleKeys = [
-        `${target}-${arch}`,
-        `${target}-${arch}-nsis`,
-        `${target}-${arch}-msi`,
-        `${target}-${arch}-app`,
-        `${target}-${arch}-appimage`,
-        `${target}-${arch}-deb`,
-        `${target}-${arch}-rpm`,
-      ];
+      if (!release) {
+        return res.status(404).json({ error: "Release not found" });
+      }
 
-      for (const key of possibleKeys) {
-        if (update.platforms?.[key]) {
-          platformData = update.platforms[key];
-          logger.info(`Found platform data with key: ${key}`);
-          break;
+      // Find the asset
+      let asset = null;
+      const targets = [target];
+      const archs = [arch];
+
+      for (const t of targets) {
+        for (const a of archs) {
+          asset = github.findAsset(release, t, a);
+          if (asset) break;
         }
+        if (asset) break;
       }
 
-      if (!platformData?.url) {
-        logger.error("No platform URL found", {
-          target,
-          arch,
-          tried: possibleKeys,
-          available: Object.keys(update.platforms || {}),
-        });
-        return res.status(404).json({
-          error: "Binary not found",
-          available: Object.keys(update.platforms || {}),
-        });
+      if (!asset) {
+        return res.status(404).json({ error: "Asset not found" });
       }
 
-      logger.info(`Proxying download from: ${platformData.url}`);
+      // Use the GitHub API URL (asset.url) - works with token!
+      const downloadUrl = asset.url;
 
-      // Stream the file from GitHub
+      logger.info(`Streaming from GitHub API: ${downloadUrl}`);
+
+      // Stream the file
       const response = await axios({
         method: "GET",
-        url: platformData.url,
+        url: downloadUrl,
         headers: {
           Authorization: `Bearer ${config.github.token}`,
           Accept: "application/octet-stream",
@@ -144,8 +124,7 @@ router.get(
         maxRedirects: 5,
       });
 
-      const filename =
-        platformData.name || `${appId}_${version}_${target}_${arch}`;
+      const filename = asset.name || `${appId}_${version}_${target}_${arch}`;
       res.setHeader("Content-Type", "application/octet-stream");
       if (response.headers["content-length"]) {
         res.setHeader("Content-Length", response.headers["content-length"]);
@@ -164,24 +143,13 @@ router.get(
         }
       });
     } catch (error) {
-      logger.error("Download proxy failed:", {
-        message: error.message,
-        status: error.response?.status,
-      });
-
-      if (error.response?.status === 404) {
-        return res.status(404).json({ error: "File not found on GitHub" });
-      }
-
-      res.status(500).json({
-        error: "Download failed",
-        details: error.message,
-      });
+      logger.error("Download failed:", error.message);
+      res.status(500).json({ error: "Download failed" });
     }
   },
 );
 
-// Get all platforms
+// Dashboard endpoint - Returns PROXY URLs instead of direct GitHub URLs
 router.get("/:appId/latest", authenticateApiKey, async (req, res, next) => {
   try {
     const { appId } = req.params;
@@ -196,7 +164,25 @@ router.get("/:appId/latest", authenticateApiKey, async (req, res, next) => {
       return res.status(404).json({ error: "No releases found" });
     }
 
-    res.json(allPlatforms);
+    // Replace direct GitHub URLs with PROXY URLs for dashboard
+    const proxyPlatforms = {};
+    for (const [key, platform] of Object.entries(
+      allPlatforms.platforms || {},
+    )) {
+      const [target, arch] = key.split("-");
+      proxyPlatforms[key] = {
+        ...platform,
+        // Override URL with proxy URL
+        url: `https://defcomm-app-server.onrender.com/api/updates/${appId}/download/${target}/${arch}/${allPlatforms.version}`,
+        // Keep original URL if needed
+        directUrl: platform.url,
+      };
+    }
+
+    res.json({
+      ...allPlatforms,
+      platforms: proxyPlatforms,
+    });
   } catch (error) {
     next(error);
   }

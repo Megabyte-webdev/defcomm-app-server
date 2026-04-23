@@ -12,13 +12,9 @@ class UpdaterService {
     currentVersion,
     channel = "stable",
   ) {
-    // Clean version string
     const cleanCurrentVersion = currentVersion.replace(/^v/, "");
-
-    // The repo name is the app ID
     const repo = appId;
 
-    // Check cache first
     const cacheKey = cacheService.generateKey(
       appId,
       target,
@@ -33,7 +29,6 @@ class UpdaterService {
       return cached;
     }
 
-    // Create GitHub service once
     const github = new GitHubService(
       config.github.token,
       config.github.owner,
@@ -41,7 +36,6 @@ class UpdaterService {
     );
 
     try {
-      // Get latest release
       const release = await github.getLatestRelease(channel);
 
       if (!release) {
@@ -57,7 +51,6 @@ class UpdaterService {
           const jsonContent = await github.getAssetContent(jsonAsset.url);
           const latestJson = JSON.parse(jsonContent);
 
-          // Return EXACTLY the latest.json, only updating notes from GitHub release
           const updateResponse = {
             ...latestJson,
             notes:
@@ -68,12 +61,10 @@ class UpdaterService {
           };
 
           await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
-
-          logger.info(" Update available (from latest.json)", {
+          logger.info("✅ Update available (from latest.json)", {
             appId,
             version: latestJson.version,
           });
-
           return updateResponse;
         } catch (jsonError) {
           logger.warn("Failed to parse latest.json, falling back to manual", {
@@ -82,16 +73,9 @@ class UpdaterService {
         }
       }
 
-      // Fallback: Build complete response from release assets
+      // Fallback: Build from assets
       const latestVersion = release.tag_name.replace(/^v/, "");
 
-      logger.info("Version check", {
-        appId,
-        current: cleanCurrentVersion,
-        latest: latestVersion,
-      });
-
-      // Validate versions
       if (!semver.valid(cleanCurrentVersion) || !semver.valid(latestVersion)) {
         logger.warn("Invalid semver", {
           appId,
@@ -101,14 +85,12 @@ class UpdaterService {
         return null;
       }
 
-      // Check if update needed
       if (semver.gte(cleanCurrentVersion, latestVersion)) {
         logger.info("Already latest", { appId, current: cleanCurrentVersion });
         await cacheService.set(cacheKey, null, 60);
         return null;
       }
 
-      // Build platforms object with ALL available platforms
       const platforms = {};
       const targets = ["windows", "darwin", "linux"];
       const archs = ["x86_64", "aarch64"];
@@ -135,7 +117,7 @@ class UpdaterService {
             }
 
             platforms[platformKey] = {
-              url: asset.browser_download_url,
+              url: asset.browser_download_url, // Original URL
               signature: signature?.trim() || undefined,
               size: asset.size,
               name: asset.name,
@@ -144,39 +126,31 @@ class UpdaterService {
         }
       }
 
-      const notes = release.body || `Update to version ${latestVersion}`;
-
       const updateResponse = {
         version: latestVersion,
-        notes: notes,
+        notes: release.body || `Update to version ${latestVersion}`,
         pub_date: release.published_at,
         platforms: platforms,
       };
 
       await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
-
-      logger.info(" Update available", {
+      logger.info("✅ Update available", {
         appId,
         current: cleanCurrentVersion,
         latest: latestVersion,
         platformCount: Object.keys(platforms).length,
       });
-
       return updateResponse;
     } catch (error) {
-      logger.error("Update check failed", {
-        appId,
-        error: error.message,
-      });
+      logger.error("Update check failed", { appId, error: error.message });
       throw error;
     }
   }
 
-  // ONLY ONE getAllLatestReleases method - THIS ONE!
   async getAllLatestReleases(appId, channel = "stable") {
     const repo = appId;
-
     const cacheKey = `all-platforms:${appId}:${channel}`;
+
     const cached = await cacheService.get(cacheKey);
     if (cached) {
       logger.debug("Cache hit for all platforms", { appId });
@@ -198,7 +172,6 @@ class UpdaterService {
       }
 
       const latestVersion = release.tag_name.replace(/^v/, "");
-
       const platforms = {};
       const targets = ["windows", "darwin", "linux"];
       const archs = ["x86_64", "aarch64"];
@@ -246,13 +219,11 @@ class UpdaterService {
       };
 
       await cacheService.set(cacheKey, allReleases, 300);
-
       logger.info("Retrieved all platform releases", {
         appId,
         version: latestVersion,
         platformCount: Object.keys(platforms).length,
       });
-
       return allReleases;
     } catch (error) {
       logger.error("Failed to get all releases", {
