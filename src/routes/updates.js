@@ -69,7 +69,6 @@ router.get(
 // SINGLE DOWNLOAD ENDPOINT - Works for both Tauri and Dashboard
 router.get(
   "/:appId/download/:target/:arch/:version",
-  authenticateApiKey,
   async (req, res, next) => {
     try {
       const { appId, target, arch, version } = req.params;
