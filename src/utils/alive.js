@@ -1,5 +1,5 @@
 import https from "https";
-
+import logger from "./logger.js";
 export function keepAlive() {
   const url = "https://defcomm-app-server.onrender.com/health/ready";
   const interval = 14 * 60 * 1000; // 14 minutes (Render sleeps at 15)
