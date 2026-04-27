@@ -133,7 +133,7 @@ async function startServer() {
       environment: config.nodeEnv,
       owner: config.github.owner,
     });
-    const APP_URL = "https://defcomm-app-server.onrender.com/health";
+    const APP_URL = "https://defcomm-app-server.onrender.com/health/ready";
     if (config.nodeEnv === "production") {
       logger.info(`Keep-alive active for: ${APP_URL}`);
       keepAlive(APP_URL);
