@@ -43,6 +43,27 @@ class UpdaterService {
         return null;
       }
 
+      const latestVersion = release.tag_name.replace(/^v/, "");
+
+      // NEW: Check if there's a version mismatch that suggests cache invalidation needed
+      const allPlatformsCacheKey = `all-platforms:${appId}:${channel}`;
+      const cachedAllPlatforms = await cacheService.get(allPlatformsCacheKey);
+
+      // If cached version is older than GitHub version, clear all related caches
+      if (
+        cachedAllPlatforms &&
+        semver.gt(latestVersion, cachedAllPlatforms.version)
+      ) {
+        logger.info("New version detected, clearing cache", {
+          appId,
+          oldVersion: cachedAllPlatforms.version,
+          newVersion: latestVersion,
+        });
+
+        // Clear all caches for this app
+        await this.clearAppCache(appId, channel);
+      }
+
       // Check for latest.json asset first
       const jsonAsset = release.assets.find((a) => a.name === "latest.json");
 
@@ -60,8 +81,12 @@ class UpdaterService {
             pub_date: release.published_at || latestJson.pub_date,
           };
 
-          await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
-          logger.info("✅ Update available (from latest.json)", {
+          // Only cache if user needs update, not if they're on latest
+          if (semver.gt(latestJson.version, cleanCurrentVersion)) {
+            await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
+          }
+
+          logger.info("Update available (from latest.json)", {
             appId,
             version: latestJson.version,
           });
@@ -72,9 +97,6 @@ class UpdaterService {
           });
         }
       }
-
-      // Fallback: Build from assets
-      const latestVersion = release.tag_name.replace(/^v/, "");
 
       if (!semver.valid(cleanCurrentVersion) || !semver.valid(latestVersion)) {
         logger.warn("Invalid semver", {
@@ -87,7 +109,8 @@ class UpdaterService {
 
       if (semver.gte(cleanCurrentVersion, latestVersion)) {
         logger.info("Already latest", { appId, current: cleanCurrentVersion });
-        await cacheService.set(cacheKey, null, 60);
+        // Cache for very short time when on latest version
+        await cacheService.set(cacheKey, null, 10); // 10 seconds only
         return null;
       }
 
@@ -117,7 +140,7 @@ class UpdaterService {
             }
 
             platforms[platformKey] = {
-              url: asset.browser_download_url, // Original URL
+              url: asset.browser_download_url,
               signature: signature?.trim() || undefined,
               size: asset.size,
               name: asset.name,
@@ -134,7 +157,7 @@ class UpdaterService {
       };
 
       await cacheService.set(cacheKey, updateResponse, config.cacheTTL);
-      logger.info("✅ Update available", {
+      logger.info("Update available", {
         appId,
         current: cleanCurrentVersion,
         latest: latestVersion,
@@ -145,6 +168,17 @@ class UpdaterService {
       logger.error("Update check failed", { appId, error: error.message });
       throw error;
     }
+  }
+
+  // Add this helper method to clear app cache
+  async clearAppCache(appId, channel) {
+    const pattern = `update:${appId}:*:${channel}`;
+    const allPlatformsKey = `all-platforms:${appId}:${channel}`;
+
+    await cacheService.deleteByPattern(pattern);
+    await cacheService.delete(allPlatformsKey);
+
+    logger.info("Cleared app cache", { appId, channel });
   }
 
   async getAllLatestReleases(appId, channel = "stable") {
