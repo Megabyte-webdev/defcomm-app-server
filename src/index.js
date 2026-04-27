@@ -14,6 +14,7 @@ import cacheService from "./services/cache.js";
 import updatesRouter from "./routes/updates.js";
 import healthRouter from "./routes/health.js";
 import logsRouter from "./routes/logs.js";
+import { keepAlive } from "./utils/alive.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -132,6 +133,11 @@ async function startServer() {
       environment: config.nodeEnv,
       owner: config.github.owner,
     });
+    const APP_URL = "https://defcomm-app-server.onrender.com/health";
+    if (config.nodeEnv === "production") {
+      logger.info(`Keep-alive active for: ${APP_URL}`);
+      keepAlive(APP_URL);
+    }
   });
 
   // Graceful shutdown
