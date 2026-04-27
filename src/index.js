@@ -134,7 +134,7 @@ async function startServer() {
       owner: config.github.owner,
     });
     if (config.nodeEnv === "production") {
-      keepAlive(APP_URL);
+      keepAlive();
     }
   });
 
