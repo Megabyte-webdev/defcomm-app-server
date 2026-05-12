@@ -115,6 +115,7 @@ class UpdaterService {
       }
 
       const platforms = {};
+
       const targets = ["windows", "darwin", "linux"];
       const archs = ["x86_64", "aarch64"];
 
@@ -214,7 +215,22 @@ class UpdaterService {
         for (const arch of archs) {
           if (target === "linux" && arch === "aarch64") continue;
 
-          const asset = github.findAsset(release, target, arch);
+          let asset = null;
+
+          if (target === "linux") {
+            const linuxPriority = [".deb", ".AppImage", ".rpm"];
+
+            for (const format of linuxPriority) {
+              asset = release.assets.find((a) =>
+                a.name.toLowerCase().includes(format),
+              );
+
+              if (asset) break;
+            }
+          } else {
+            asset = github.findAsset(release, target, arch);
+          }
+
           if (asset) {
             const platformKey = `${target}-${arch}`;
             const sigAsset = await github.findSignatureAsset(release, asset);

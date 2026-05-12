@@ -171,13 +171,7 @@ class GitHubService {
               "arm64.dmg",
             ]
           : ["x64.app.tar.gz", "x86_64.app.tar.gz", "x64.dmg", "intel.dmg"],
-      linux: [
-        ".AppImage",
-        ".AppImage.tar.gz",
-        "_amd64.deb",
-        "_amd64.rpm",
-        "amd64.AppImage",
-      ],
+      linux: [".deb", ".AppImage", ".rpm"],
     };
 
     return patterns[target] || [];
