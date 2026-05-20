@@ -148,4 +148,11 @@ app.use(errorLogger);
 //   // });
 // }
 
-export default app;
+app.listen(config.port, () => {
+  console.log(`\n=================================`);
+  console.log(` Server running on port ${config.port}`);
+  console.log(` Logs: http://localhost:${config.port}/logs`);
+  console.log(` Health: http://localhost:${config.port}/health`);
+  console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
+  console.log(`=================================\n`);
+});
