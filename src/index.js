@@ -2,22 +2,30 @@ import express from "express";
 import helmet from "helmet";
 import cors from "cors";
 import compression from "compression";
+import path from "path";
+import { fileURLToPath } from "url";
 import config from "./config.js";
 import logger from "./utils/logger.js";
 import rateLimiter from "./middleware/rateLimit.js";
 import { requestLogger, errorLogger } from "./middleware/logging.js";
+import cacheService from "./services/cache.js";
 
 // Routes
 import updatesRouter from "./routes/updates.js";
 import healthRouter from "./routes/health.js";
 import logsRouter from "./routes/logs.js";
+import { keepAlive } from "./utils/alive.js";
 
-// Configuration validation: Just log the error, do NOT use process.exit
-try {
-  config.validate();
-} catch (error) {
-  logger.error("Configuration error:", error.message);
-}
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Validate configuration
+// try {
+//   config.validate();
+// } catch (error) {
+//   logger.error("Configuration error:", error.message);
+//   process.exit(1);
+// }
 
 const app = express();
 
@@ -33,6 +41,11 @@ app.use(
         connectSrc: ["'self'"],
       },
     },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
   }),
 );
 
@@ -45,7 +58,7 @@ app.use(
       "http://localhost:3000",
       "tauri://localhost",
       "https://tauri.localhost",
-      "https://defcomm-app-server.onrender.com",
+      "https://defcomm-app-server.vercel.app",
     ],
     credentials: true,
     allowedHeaders: ["X-API-Key", "Content-Type", "Authorization"],
@@ -53,23 +66,39 @@ app.use(
   }),
 );
 
+// Compression
 app.use(compression());
+
+// Parsing
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Trust proxy is required for Vercel
+// Trust proxy
 app.set("trust proxy", 1);
+
+// Static files (Dashboard)
+// app.use(express.static(path.join(__dirname, "../public")));
 
 // Logging
 app.use(requestLogger);
 
-// Rate limiting (API only)
+// Rate limiting (skip for dashboard assets)
 app.use("/api", rateLimiter);
 
 // Routes
 app.use("/api/updates", updatesRouter);
 app.use("/health", healthRouter);
 app.use("/logs", logsRouter);
+
+// // Dashboard route
+// app.get("/dashboard", (req, res) => {
+//   res.sendFile(path.join(__dirname, "../public/index.html"));
+// });
+
+// Root endpoint
+app.get("/", (req, res) => {
+  res.redirect("/dashboard");
+});
 
 // 404 handler
 app.use((req, res) => {
@@ -82,6 +111,41 @@ app.use((req, res) => {
 // Error handler
 app.use(errorLogger);
 
-// Note: No startServer(), no app.listen()
+// Async startup function
+async function startServer() {
+  // Clear cache on startup (optional - comment out if not needed)
+  try {
+    await cacheService.clear();
+    console.log("Cache cleared on startup");
+  } catch (error) {
+    console.warn(" Failed to clear cache:", error.message);
+  }
+
+  const server = app.listen(config.port, () => {
+    console.log(`\n=================================`);
+    console.log(` Server running on port ${config.port}`);
+    console.log(` Logs: http://localhost:${config.port}/logs`);
+    console.log(` Health: http://localhost:${config.port}/health`);
+    console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
+    console.log(`=================================\n`);
+
+    // logger.info(` Update server running on port ${config.port}`, {
+    //   environment: config.nodeEnv,
+    //   owner: config.github.owner,
+    // });
+    if (config.nodeEnv === "production") {
+      keepAlive();
+    }
+  });
+
+  // // Graceful shutdown
+  // process.on("SIGTERM", () => {
+  //   logger.info("SIGTERM received, shutting down gracefully");
+  //   server.close(() => {
+  //     logger.info("Server closed");
+  //     process.exit(0);
+  //   });
+  // });
+}
 
 export default app;
