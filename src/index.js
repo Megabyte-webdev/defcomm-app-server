@@ -111,44 +111,55 @@ app.use((req, res) => {
 // Error handler
 app.use(errorLogger);
 
-// Async startup function
-async function startServer() {
-  // Clear cache on startup (optional - comment out if not needed)
-  try {
-    await cacheService.clear();
-    console.log("Cache cleared on startup");
-  } catch (error) {
-    console.warn(" Failed to clear cache:", error.message);
-  }
+app.listen(config.port, () => {
+  console.log(`\n=================================`);
+  console.log(` Server running on port ${config.port}`);
+  console.log(` Logs: http://localhost:${config.port}/logs`);
+  console.log(` Health: http://localhost:${config.port}/health`);
+  console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
+  console.log(`=================================\n`);
 
-  const server = app.listen(config.port, () => {
-    console.log(`\n=================================`);
-    console.log(` Server running on port ${config.port}`);
-    console.log(` Logs: http://localhost:${config.port}/logs`);
-    console.log(` Health: http://localhost:${config.port}/health`);
-    console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
-    console.log(`=================================\n`);
-
-    logger.info(` Update server running on port ${config.port}`, {
-      environment: config.nodeEnv,
-      owner: config.github.owner,
-    });
-    // if (config.nodeEnv === "production") {
-    //   keepAlive();
-    // }
+  logger.info(` Update server running on port ${config.port}`, {
+    environment: config.nodeEnv,
+    owner: config.github.owner,
   });
+});
 
-  // Graceful shutdown
-  process.on("SIGTERM", () => {
-    logger.info("SIGTERM received, shutting down gracefully");
-    server.close(() => {
-      logger.info("Server closed");
-      process.exit(0);
-    });
-  });
-}
+// // Async startup function
+// async function startServer() {
+//   // Clear cache on startup (optional - comment out if not needed)
+//   try {
+//     await cacheService.clear();
+//     console.log("Cache cleared on startup");
+//   } catch (error) {
+//     console.warn(" Failed to clear cache:", error.message);
+//   }
 
-// Start the server
-startServer();
+//   const server = app.listen(config.port, () => {
+//     console.log(`\n=================================`);
+//     console.log(` Server running on port ${config.port}`);
+//     console.log(` Logs: http://localhost:${config.port}/logs`);
+//     console.log(` Health: http://localhost:${config.port}/health`);
+//     console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
+//     console.log(`=================================\n`);
+
+//     logger.info(` Update server running on port ${config.port}`, {
+//       environment: config.nodeEnv,
+//       owner: config.github.owner,
+//     });
+//     // if (config.nodeEnv === "production") {
+//     //   keepAlive();
+//     // }
+//   });
+
+//   // Graceful shutdown
+//   process.on("SIGTERM", () => {
+//     logger.info("SIGTERM received, shutting down gracefully");
+//     server.close(() => {
+//       logger.info("Server closed");
+//       process.exit(0);
+//     });
+//   });
+// }
 
 export default app;
