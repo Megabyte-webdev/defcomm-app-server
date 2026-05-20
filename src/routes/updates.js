@@ -50,7 +50,7 @@ router.get(
       }
 
       // Return PROXY URL - no token exposed!
-      const proxyUrl = `https://defcomm-app-server.onrender.com/api/updates/${appId}/download/${target}/${arch}/${update.version}`;
+      const proxyUrl = `https://defcomm-app-server.vercel.app/api/updates/${appId}/download/${target}/${arch}/${update.version}`;
 
       res.json({
         version: update.version,
@@ -173,7 +173,7 @@ router.get("/:appId/latest", authenticateApiKey, async (req, res, next) => {
       proxyPlatforms[key] = {
         ...platform,
         // Override URL with proxy URL
-        url: `https://defcomm-app-server.onrender.com/api/updates/${appId}/download/${target}/${arch}/${allPlatforms.version}`,
+        url: `https://defcomm-app-server.vercel.app/api/updates/${appId}/download/${target}/${arch}/${allPlatforms.version}`,
         // Keep original URL if needed
         directUrl: platform.url,
       };
