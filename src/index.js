@@ -7,17 +7,17 @@ import { fileURLToPath } from "url";
 import config from "./config.js";
 import logger from "./utils/logger.js";
 import rateLimiter from "./middleware/rateLimit.js";
-import { requestLogger, errorLogger } from "./middleware/logging.js";
+//import { requestLogger, errorLogger } from "./middleware/logging.js";
 import cacheService from "./services/cache.js";
 
 // Routes
 import updatesRouter from "./routes/updates.js";
 import healthRouter from "./routes/health.js";
 import logsRouter from "./routes/logs.js";
-import { keepAlive } from "./utils/alive.js";
+// import { keepAlive } from "./utils/alive.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// const __filename = fileURLToPath(import.meta.url);
+// const __dirname = path.dirname(__filename);
 
 // Validate configuration
 // try {
@@ -80,7 +80,7 @@ app.set("trust proxy", 1);
 // app.use(express.static(path.join(__dirname, "../public")));
 
 // Logging
-app.use(requestLogger);
+// app.use(requestLogger);
 
 // Rate limiting (skip for dashboard assets)
 app.use("/api", rateLimiter);
@@ -109,7 +109,7 @@ app.use((req, res) => {
 });
 
 // Error handler
-app.use(errorLogger);
+// app.use(errorLogger);
 
 // Async startup function
 // async function startServer() {
@@ -148,11 +148,4 @@ app.use(errorLogger);
 //   // });
 // }
 
-app.listen(config.port, () => {
-  console.log(`\n=================================`);
-  console.log(` Server running on port ${config.port}`);
-  console.log(` Logs: http://localhost:${config.port}/logs`);
-  console.log(` Health: http://localhost:${config.port}/health`);
-  console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
-  console.log(`=================================\n`);
-});
+export default app;
