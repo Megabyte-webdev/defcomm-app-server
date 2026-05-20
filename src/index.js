@@ -133,9 +133,9 @@ async function startServer() {
       environment: config.nodeEnv,
       owner: config.github.owner,
     });
-    if (config.nodeEnv === "production") {
-      keepAlive();
-    }
+    // if (config.nodeEnv === "production") {
+    //   keepAlive();
+    // }
   });
 
   // Graceful shutdown
