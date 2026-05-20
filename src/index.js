@@ -20,12 +20,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Validate configuration
-try {
-  config.validate();
-} catch (error) {
-  logger.error("Configuration error:", error.message);
-  process.exit(1);
-}
+// try {
+//   config.validate();
+// } catch (error) {
+//   logger.error("Configuration error:", error.message);
+//   process.exit(1);
+// }
 
 const app = express();
 
@@ -109,7 +109,7 @@ app.use((req, res) => {
 });
 
 // Error handler
-// app.use(errorLogger);
+app.use(errorLogger);
 
 // Async startup function
 async function startServer() {
@@ -129,10 +129,10 @@ async function startServer() {
     console.log(` Dashboard: http://localhost:${config.port}/dashboard`);
     console.log(`=================================\n`);
 
-    logger.info(` Update server running on port ${config.port}`, {
-      environment: config.nodeEnv,
-      owner: config.github.owner,
-    });
+    // logger.info(` Update server running on port ${config.port}`, {
+    //   environment: config.nodeEnv,
+    //   owner: config.github.owner,
+    // });
     if (config.nodeEnv === "production") {
       keepAlive();
     }
