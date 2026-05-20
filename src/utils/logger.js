@@ -1,24 +1,30 @@
 import winston from "winston";
 import config from "../config.js";
 
-// Create transports array
-const transports = [
-  new winston.transports.File({
-    filename: "logs/error.log",
-    level: "error",
-    maxsize: 10485760, // 10MB
-    maxFiles: 5,
-  }),
-  new winston.transports.File({
-    filename: "logs/combined.log",
-    maxsize: 10485760,
-    maxFiles: 5,
-  }),
-];
+// Define the base format for all logs
+const logFormat = winston.format.combine(
+  winston.format.timestamp({ format: "YYYY-MM-DD HH:mm:ss" }),
+  winston.format.errors({ stack: true }),
+  winston.format.splat(),
+  winston.format.json(),
+);
 
-// Add console transport immediately for development
-if (config.nodeEnv !== "production") {
+// Define transports based on environment
+const transports = [];
+
+if (config.nodeEnv === "production") {
+  // In production (Vercel), we MUST use Console.
+  // Vercel automatically captures console output and displays it in your logs tab.
   transports.push(
+    new winston.transports.Console({
+      format: logFormat,
+    }),
+  );
+} else {
+  // Local development: keep your file logging if you prefer
+  transports.push(
+    new winston.transports.File({ filename: "logs/error.log", level: "error" }),
+    new winston.transports.File({ filename: "logs/combined.log" }),
     new winston.transports.Console({
       format: winston.format.combine(
         winston.format.colorize(),
@@ -29,17 +35,10 @@ if (config.nodeEnv !== "production") {
 }
 
 const logger = winston.createLogger({
-  level: config.logLevel,
-  format: winston.format.combine(
-    winston.format.timestamp({
-      format: "YYYY-MM-DD HH:mm:ss",
-    }),
-    winston.format.errors({ stack: true }),
-    winston.format.splat(),
-    winston.format.json(),
-  ),
+  level: config.logLevel || "info",
+  format: logFormat,
   defaultMeta: { service: "tauri-update-server" },
-  transports: transports, // Use the transports array
+  transports: transports,
 });
 
 // Create a stream for Morgan
