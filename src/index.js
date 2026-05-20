@@ -20,12 +20,12 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Validate configuration
-try {
-  config.validate();
-} catch (error) {
-  logger.error("Configuration error:", error.message);
-  process.exit(1);
-}
+// try {
+//   config.validate();
+// } catch (error) {
+//   logger.error("Configuration error:", error.message);
+//   process.exit(1);
+// }
 
 const app = express();
 
